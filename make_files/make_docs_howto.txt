@@ -1,7 +1,0 @@
-cd WarThunder
-mkdir docs
-cd docs
-sphinx-quickstart
-Replace conf.py and index.rst
-sphinx-apidoc -o . .. --ext-autodoc
-make html
