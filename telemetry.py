@@ -4,25 +4,29 @@ Module to query and access telemetry data during War Thunder matches
 
 
 import socket
-import requests
-from WarThunder import mapinfo
+from requests import get
+from requests.exceptions import ConnectTimeout
+from WTwebdev import mapinfo
 
 
-IP_ADDRESS     = socket.gethostbyname(socket.gethostname())
+# IP_ADDRESS     = socket.gethostbyname(socket.gethostname())
+IP_ADDRESS   = "127.0.0.1"
 URL_INDICATORS = 'http://{}:8111/indicators'.format(IP_ADDRESS)
 URL_STATE      = 'http://{}:8111/state'.format(IP_ADDRESS)
 URL_COMMENTS   = 'http://{}:8111/gamechat?lastId={}'
 URL_EVENTS     = 'http://{}:8111/hudmsg?lastEvt=-1&lastDmg={}'
 FT_TO_M        = 0.3048
-IN_FLIGHT      = 0
-IN_MENU        = -1
-NO_MISSION     = -2
-WT_NOT_RUNNING = -3
-OTHER_ERROR    = -4
 METRICS_PLANES = ['p-', 'f-', 'f2', 'f3', 'f4', 'f6', 'f7', 'f8', 'f9', 'os',
                   'sb', 'tb', 'a-', 'pb', 'am', 'ad', 'fj', 'b-', 'b_', 'xp',
                   'bt', 'xa', 'xf', 'sp', 'hu', 'ty', 'fi', 'gl', 'ni', 'fu',
                   'fu', 'se', 'bl', 'be', 'su', 'te', 'st', 'mo', 'we', 'ha']
+
+class Status:
+    IN_FLIGHT      = 0
+    IN_MENU        = -1
+    NO_MISSION     = -2
+    WT_NOT_RUNNING = -3
+    OTHER_ERROR    = -4
 
 
 def combine_dicts(to_dict: dict, from_dict: dict) -> dict:
@@ -61,7 +65,7 @@ class TelemInterface(object):
         self.last_comment_ID = -1
         self.comments        = []
         self.events          = {}
-        self.status          = WT_NOT_RUNNING
+        self.status          = Status.WT_NOT_RUNNING
     
     def get_comments(self) -> list:
         '''
@@ -72,7 +76,7 @@ class TelemInterface(object):
                 List of comments
         '''
         
-        comments_response = requests.get(URL_COMMENTS.format(IP_ADDRESS, self.last_comment_ID))
+        comments_response = get(URL_COMMENTS.format(IP_ADDRESS, self.last_comment_ID))
         self.comments.extend(comments_response.json())
         if self.comments:
             self.last_comment_ID = max([comment['id'] for comment in self.comments])
@@ -88,7 +92,7 @@ class TelemInterface(object):
                 Events log dictionary
         '''
         
-        events_response    = requests.get(URL_EVENTS.format(IP_ADDRESS, self.last_event_ID))
+        events_response    = get(URL_EVENTS.format(IP_ADDRESS, self.last_event_ID))
         self.events        = combine_dicts(self.events, events_response.json())
         
         try:
@@ -161,10 +165,10 @@ class TelemInterface(object):
             self.map_info.download_files()
             self.map_info.parse_meta()
             
-            indicator_response = requests.get(URL_INDICATORS)
+            indicator_response = get(URL_INDICATORS)
             self.indicators    = indicator_response.json()
 
-            state_response = requests.get(URL_STATE)
+            state_response = get(URL_STATE)
             self.state     = state_response.json()
             
             if comments:
@@ -198,7 +202,7 @@ class TelemInterface(object):
                     self.basic_telemetry['airframe'] = self.indicators['type']
                     self.basic_telemetry['roll']     = self.indicators['aviahorizon_roll']
                     self.basic_telemetry['pitch']    = self.indicators['aviahorizon_pitch']
-                    self.basic_telemetry['heading']  = self.indicators['compass']
+                    # self.basic_telemetry['heading']  = self.indicators['compass']
                     self.basic_telemetry['altitude'] = self.indicators['alt_m']
                 
                     self.basic_telemetry['lat'] = self.map_info.player_lat
@@ -207,7 +211,7 @@ class TelemInterface(object):
                     self.full_telemetry['lon']  = self.map_info.player_lon
                     
                     try: 
-                        self.basic_telemetry['IAS'] = self.state['TAS, km/h']
+                        self.basic_telemetry['IAS'] = self.state['IAS, km/h']
                     except KeyError:
                         self.basic_telemetry['IAS'] = None
                     
@@ -222,22 +226,66 @@ class TelemInterface(object):
                         self.basic_telemetry['gearState'] = None
                     
                     self.connected = True
-                    self.status    = IN_FLIGHT
+                    self.status    = Status.IN_FLIGHT
                     
                 except (KeyError, AttributeError):
-                    self.status = IN_MENU
+                    self.status = Status.IN_MENU
             else:
-                self.status = NO_MISSION
+                self.status = Status.NO_MISSION
 
         except Exception as e:
             if 'Failed to establish a new connection' in str(e):
-                self.status = WT_NOT_RUNNING
+                self.status = Status.WT_NOT_RUNNING
             else:
                 import traceback
                 traceback.print_exc()
-                self.status = OTHER_ERROR
+                self.status = Status.OTHER_ERROR
         
         return self.connected
 
+    def get_status(self) -> int:
+        '''
+        Return game status
+        '''
 
 
+        self.connected       = False
+        self.full_telemetry  = {}
+        self.basic_telemetry = {}
+
+        try:
+            
+            if not self.map_info.check_battle():
+                return Status.IN_MENU
+            
+            indicator_response = get(URL_INDICATORS)
+            self.indicators    = indicator_response.json()
+
+            state_response = get(URL_STATE)
+            self.state     = state_response.json()
+            
+            # self.get_events()
+            
+            if self.indicators['valid'] and self.state['valid']:
+                try:
+                                        
+                    self.basic_telemetry['airframe'] = self.indicators['type']
+                    
+                    self.connected = True
+                    return Status.IN_FLIGHT
+                    
+                except (KeyError, AttributeError):
+                    return Status.IN_MENU
+            else:
+                return Status.NO_MISSION
+
+        except ConnectTimeout:
+            return Status.WT_NOT_RUNNING
+
+        except Exception as e:
+            if 'Failed to establish a new connection' in str(e):
+                return Status.WT_NOT_RUNNING
+            else:
+                import traceback
+                traceback.print_exc()
+                return Status.OTHER_ERROR

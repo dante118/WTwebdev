@@ -15,19 +15,20 @@ from urllib.error import URLError
 from urllib.request import urlretrieve
 from requests.exceptions import ReadTimeout, ConnectTimeout
 from math import radians, degrees, sqrt, sin, asin, cos, atan2
-from WarThunder.maps import maps
+from WTwebdev.maps import maps
 
 
 LOCAL_PATH   = os.path.dirname(os.path.realpath(__file__))
 MAP_PATH     = os.path.join(LOCAL_PATH, 'map.jpg')
-IP_ADDRESS   = socket.gethostbyname(socket.gethostname())
+# IP_ADDRESS   = socket.gethostbyname(socket.gethostname())
+IP_ADDRESS   = '127.0.0.1'
 URL_MAP_IMG  = 'http://{}:8111/map.img'.format(IP_ADDRESS)
 URL_MAP_OBJ  = 'http://{}:8111/map_obj.json'.format(IP_ADDRESS)
 URL_MAP_INFO = 'http://{}:8111/map_info.json'.format(IP_ADDRESS)
 ENEMY_HEX_COLORS = ['#f40C00', '#ff0D00', '#ff0000']
 MAX_HAMMING_DIST = 3
 EARTH_RADIUS_KM  = 6378.137
-REQUEST_TIMEOUT  = 0.1
+REQUEST_TIMEOUT  = 1
 
 
 def hypotenuse(a: float, b: float) -> float:
@@ -527,6 +528,62 @@ class MapInfo(object):
             
         return self.map_valid
     
+    def check_battle(self, player_pos: bool = False) -> bool:
+        '''
+        Checks if player in a battle by checking {URL_MAP_OBJ} for availability.
+
+        :param player_pos: bool Check regarding player position      
+        :return: True if player in battle
+        '''
+
+        in_battle = False
+
+        try:
+            data1 = get(URL_MAP_OBJ,  timeout=REQUEST_TIMEOUT)
+            if player_pos:
+                sleep(1)
+                data2 = get(URL_MAP_OBJ,  timeout=REQUEST_TIMEOUT)
+                data1 = data1.json()
+                data2 = data2.json()
+                in_battle = not self.compare_player_pos(data1, data2)
+            else:
+                in_battle = True
+
+        except ReadTimeout:
+            pass
+        except (JSONDecodeError, simpleJSONDecodeError):
+            pass
+            # print('ERROR: json decode failed')
+        
+        return in_battle
+
+    def compare_player_pos(self, data1, data2) -> bool:
+        '''
+        Compare player position from map_obj.json
+        
+        :param data1: First data from map_obj.json
+        :param data2: Second data from map_obj.json
+        :return: True if position in data1 and in data2 same
+        '''
+
+        player_x1 = None
+        player_x2 = None
+        player_y1 = None
+        player_y2 = None
+        for obj in data1:
+            if obj['icon'] == 'Player':
+                player_x1   = obj['x']
+                player_y1   = obj['y']
+                break
+        for obj in data2:
+            if obj['icon'] == 'Player':
+                player_x2   = obj['x']
+                player_y2   = obj['y']
+                break
+        if (player_x1 != player_x2) and (player_y1 != player_y2):
+            return False
+        return True
+
     def parse_meta(self):
         '''
         Calculate values that might be useful for extra processing. Also build
