@@ -64,7 +64,7 @@ class TelemInterface(object):
         self.last_event_ID   = -1
         self.last_comment_ID = -1
         self.comments        = []
-        self.events          = {}
+        self.events          = []
         self.status          = Status.WT_NOT_RUNNING
     
     def get_comments(self) -> list:
@@ -82,7 +82,7 @@ class TelemInterface(object):
             self.last_comment_ID = max([comment['id'] for comment in self.comments])
         return self.comments
     
-    def get_events(self) -> dict:
+    def get_events(self) -> list:
         '''
         Query http://localhost:8111/hudmsg?lastEvt=-1&lastDmg=-1 to get
         information on all events (i.e. when someone is damaged or destroyed)
@@ -93,12 +93,11 @@ class TelemInterface(object):
         '''
         
         events_response    = get(URL_EVENTS.format(IP_ADDRESS, self.last_event_ID))
-        self.events        = combine_dicts(self.events, events_response.json())
+        self.events.extend(events_response.json()['damage'])
         
         try:
-            self.last_event_ID = max([event['id'] for event in self.events['damage']])
-        except ValueError:
-            self.last_event_ID = -1
+            self.last_event_ID = self.events[-1]['id']
+        except IndexError: pass
         
         return self.events
     
@@ -264,7 +263,7 @@ class TelemInterface(object):
             state_response = get(URL_STATE)
             self.state     = state_response.json()
             
-            # self.get_events()
+            self.get_events()
             
             if self.indicators['valid'] and self.state['valid']:
                 try:
