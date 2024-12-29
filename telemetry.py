@@ -91,9 +91,11 @@ class TelemInterface(object):
         Returns:
                 Events log dictionary
         '''
-        
-        events_response    = get(URL_EVENTS.format(IP_ADDRESS, self.last_event_ID))
-        self.events.extend(events_response.json()['damage'])
+        try:
+            events_response = get(URL_EVENTS.format(IP_ADDRESS, self.last_event_ID))
+            self.events.extend(events_response.json()['damage'])
+        except Exception: pass
+
         
         try:
             self.last_event_ID = self.events[-1]['id']

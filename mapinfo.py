@@ -549,7 +549,7 @@ class MapInfo(object):
             else:
                 in_battle = True
 
-        except ReadTimeout:
+        except (ReadTimeout, ConnectTimeout, ConnectionError):
             pass
         except (JSONDecodeError, simpleJSONDecodeError):
             pass
